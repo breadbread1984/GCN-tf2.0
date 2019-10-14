@@ -117,12 +117,8 @@ class GraphConvolution(tf.keras.layers.Layer):
                 res = tf.keras.layers.Lambda(lambda x: tf.sparse.sparse_dense_matmul(x[0], x[1]))([results, self.kernel[i]]);
             else:
                 res = tf.keras.layers.Lambda(lambda x: tf.linalg.matmul(x[0], x[1]))([results, self.kernel[i]]);
-            # res.shape = (N, batch, Dout)
-            res = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1, 0, 2)))(res);
-            # res.shape = (N, batch, Dout)
-            res = tf.keras.layers.Lambda(lambda x, y: tf.sparse.sparse_dense_matmul(y, x), arguments = {'y': self.supports[i]})(res);
             # res.shape = (batch, N, Dout)
-            res = tf.keras.layers.Lambda(lambda x: tf.transpose(x, (1, 0, 2)))(res);
+            res = tf.keras.layers.Lambda(lambda x: tf.map_fn(lambda y: tf.sparse.sparse_dense_matmul(self.supports[i], y), x))(res);
             outputs.append(res);
         # results.shape = (batch, N, Dout)
         results = tf.keras.layers.Add()(outputs);
