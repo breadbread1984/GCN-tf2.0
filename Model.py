@@ -129,24 +129,6 @@ class GraphConvolution(tf.keras.layers.Layer):
         if self.activation is not None:
             results = self.activation(results);
         return results;
-    
-    def get_config(self):
-        
-        config = {'dropout_rate': self.dropout_rate,
-                  'use_bias': self.use_bias,
-                  'activation': self.activation,
-                  'supports': [(support.indices.numpy().tolist(), support.values.numpy().tolist(), support.dense_shape.numpy().tolist()) for support in self.supports]};
-        base_config = super(GraphConvolution, self).get_config();
-        return dict(list(base_config.items()) + list(config.items()));
-    
-    @classmethod
-    def from_config(cls, config):
-
-        self.dropout_rate = config['dropout_rate'];
-        self.use_bias = config['use_bias'];
-        self.activation = config['activation'];
-        self.supports = [tf.sparse.SparseTensor(indices = support[0], values = support[1], dense_shape = support[2]) for support in config['supports']];
-        return cls(**config);
 
 def GCN(input_dim, adj, max_degree = 3, dropout_rate = 0.5):
 
@@ -165,5 +147,5 @@ if __name__ == "__main__":
     adj = tf.constant(adj);
 
     gcn = GCN(200, adj = adj);
-    gcn.save('gcn.h5');
-    gcn = tf.keras.models.load_model('gcn.h5', compile = False);
+    gcn.save_weights('gcn.h5');
+    gcn.load_weights('gcn.h5');
