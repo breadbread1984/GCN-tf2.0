@@ -64,11 +64,13 @@ def ChebyshevPolynomials(adj, max_degree = 3):
 class GraphConvolution(tf.keras.layers.Layer):
     # the graph convolution is defined as an tf.keras.Layer because it gets customized weights
     
-    def __init__(self, supports = None, dropout_rate = 0., use_bias = True, activation = None, adj = None, max_degree = 3, ** kwargs):
+    def __init__(self, filters = None, supports = None, dropout_rate = 0., use_bias = True, activation = None, adj = None, max_degree = 3, ** kwargs):
 
+        assert type(filters) is int and 0 < filters;
         assert type(dropout_rate) is float and 0 <= dropout_rate < 1;
         assert type(supports) is list;
         assert tf.math.reduce_all([type(support) is tf.sparse.SparseTensor and tf.shape(tf.shape(support))[0] == 2 for support in supports]);
+        self.filters = filters; # Dout
         self.dropout_rate = dropout_rate;
         self.use_bias = use_bias;
         self.activation = activation;
@@ -82,22 +84,23 @@ class GraphConvolution(tf.keras.layers.Layer):
 
     def build(self, input_shape):
 
-        # D is input vector dimension
-        # N is number of chebyshev polynomials
-        # K is number of nodes in graph
-        # input.shape = (batch, D)
-        # self.weights = (N, D, K)
-        # self.supports = N * (K, K)
-        # self.weights.shape = (chebyshev polynomial degree, D, chebyshev polynomial.shape[0])
-        self.kernel = self.add_weight(name = 'kernel', shape = (len(self.supports), input_shape[-1], self.supports[0].shape[0],), initializer = tf.keras.initializers.GlorotUniform(), trainable = True);
+        # Din is input dimension
+        # Dout is output dimension
+        # K is number of chebyshev polynomials
+        # N is number of nodes in graph
+        # input.shape = (batch, N, Din)
+        # self.kernel = (K, Din, Dout)
+        # self.bias = (Dout)
+        # self.supports = K * (N, N)
+        self.kernel = self.add_weight(name = 'kernel', shape = (len(self.supports), input_shape[-1], self.filters), initializer = tf.keras.initializers.GlorotUniform(), trainable = True);
         if self.use_bias:
             # self.bias.shape = ()
-            self.bias = self.add_weight(name = 'bias', shape = (self.supports[0].shape[1],), initializer = tf.keras.initializers.Zeros(), trainable = True);
+            self.bias = self.add_weight(name = 'bias', shape = (self.filters,), initializer = tf.keras.initializers.Zeros(), trainable = True);
 
     def call(self, inputs):
 
         # dropout input
-        # results.shape = (batch, D)
+        # results.shape = (batch, K, Din)
         if type(inputs) is tf.sparse.SparseTensor:
             results = tf.keras.layers.Lambda(lambda x, y: (1 - y) + tf.random.uniform(tf.shape(x)), arguments = {"y": self.dropout_rate})(inputs);
             results = tf.keras.layers.Lambda(lambda x: tf.cast(tf.math.floor(x), dtype = tf.bool))(results);
@@ -106,38 +109,43 @@ class GraphConvolution(tf.keras.layers.Layer):
         else:
             results = tf.keras.layers.Dropout(self.dropout_rate)(inputs);
         # graph convolution
-        def dot(x):
-            # results.shape = (batch, D)
-            # x.shape = (D, K)
+        def dot1(kernel):
+            # results.shape = (batch, N, Din)
+            # kernel.shape = (Din, Dout)
             if type(results) is tf.sparse.SparseTensor:
-                res = tf.sparse.sparse_dense_matmul(results, x);
+                res = tf.sparse.sparse_dense_matmul(results, kernel);
             else:
-                res = tf.linalg.matmul(results, x);
+                res = tf.linalg.matmul(results, kernel);
             return res;
-        # results.shape = (N, batch, K)
-        results = tf.keras.layers.Lambda(lambda x: tf.map_fn(dot, x))(self.kernel);
-        # outputs.shape = N * (batch, K)
-        outputs = list();
-        for i in range(len(self.supports)):
-            # results[i].shape = (batch, K)
-            output = tf.keras.layers.Lambda(lambda x, y: tf.transpose(tf.sparse.sparse_dense_matmul(y, x, adjoint_b = True)), arguments = {"y": self.supports[i]})(results[i]);
-            outputs.append(output);
-        # results.shape = (batch, K)
-        results = tf.keras.layers.Lambda(lambda x: tf.math.add_n(x))(outputs);
+        # results.shape = (batch, N, Dout)
+        results = tf.keras.layers.Lambda(lambda x: tf.map_fn(dot1, x))(self.kernel);
+        def dot2(result):
+            # result.shape = (N, Dout)
+            # supports.shape = K * (N, N)
+            outputs = list();
+            for support in self.supports:
+                # output.shape = (N, Dout)
+                output = tf.keras.layers.Lambda(lambda x, y: tf.sparse.sparse_dense_matmul(y, x), arguments = {"y": support})(result);
+                outputs.append(output);
+            # res.shape = (N, Dout)
+            res = tf.keras.layers.Lambda(lambda x: tf.math.add_n(x))(outputs);
+            return res;
+        # results.shape = (batch, N, Dout)
+        results = tf.keras.layers.Lambda(lambda x: tf.map_fn(dot2, x))(results);
         if self.use_bias:
             results = tf.keras.layers.Lambda(lambda x: x[0] + x[1])([results, self.bias]);
         if self.activation is not None:
             results = self.activation(results);
         return results;
 
-def GCN(input_dim, adj, max_degree = 3, dropout_rate = 0.5):
+def GCN(input_dim, hidden_dim, output_dim, adj, max_degree = 3, dropout_rate = 0.5):
 
     assert type(input_dim) is int and input_dim > 0;
-    # inputs.shape = (batch, D)
+    # inputs.shape = (batch, N, D)
     chebys = ChebyshevPolynomials(adj, max_degree);
-    inputs = tf.keras.Input((input_dim,));
-    results = GraphConvolution(supports = chebys, dropout_rate = dropout_rate, activation = tf.keras.layers.ReLU())(inputs);
-    results = GraphConvolution(supports = chebys, dropout_rate = dropout_rate)(results);
+    inputs = tf.keras.Input((chebys[0].shape[0], input_dim,));
+    results = GraphConvolution(filters = hidden_dim, supports = chebys, dropout_rate = dropout_rate, activation = tf.keras.layers.ReLU())(inputs);
+    results = GraphConvolution(filters = output_dim, supports = chebys, dropout_rate = dropout_rate)(results);
     return tf.keras.Model(inputs = inputs, outputs = results);
 
 if __name__ == "__main__":
@@ -146,6 +154,7 @@ if __name__ == "__main__":
     adj = np.tril(adj,-1) + np.transpose(np.tril(adj,-1)) + np.eye(1500);
     adj = tf.constant(adj);
 
-    gcn = GCN(200, adj = adj);
+    gcn = GCN(input_dim = 200, hidden_dim = 200, output_dim = 200, adj = adj);
+    results = gcn(tf.constant(np.random.normal(8,1500,200)));
     gcn.save_weights('gcn.h5');
     gcn.load_weights('gcn.h5');
