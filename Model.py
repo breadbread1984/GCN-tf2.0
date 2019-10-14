@@ -92,7 +92,7 @@ class GraphConvolution(tf.keras.layers.Layer):
         # self.kernel = (K, Din, Dout)
         # self.bias = (Dout)
         # self.supports = K * (N, N)
-        self.kernel = self.add_weight(name = 'kernel', shape = (len(self.supports), input_shape[-1], self.filters), initializer = tf.keras.initializers.GlorotUniform(), trainable = True);
+        self.kernel = [self.add_weight(name = 'kernel' + str(i), shape = (input_shape[-1], self.filters), initializer = tf.keras.initializers.GlorotUniform(), trainable = True) for i in range(len(self.supports))];
         if self.use_bias:
             # self.bias.shape = ()
             self.bias = self.add_weight(name = 'bias', shape = (self.filters,), initializer = tf.keras.initializers.Zeros(), trainable = True);
@@ -109,29 +109,22 @@ class GraphConvolution(tf.keras.layers.Layer):
         else:
             results = tf.keras.layers.Dropout(self.dropout_rate)(inputs);
         # graph convolution
-        def dot1(kernel):
-            # results.shape = (batch, N, Din)
-            # kernel.shape = (Din, Dout)
+        # outputs.shape = K * (batch, N, Dout)
+        outputs = list();
+        for i in range(len(self.supports)):
+            # res.shape = (batch, N, Dout)
             if type(results) is tf.sparse.SparseTensor:
-                res = tf.sparse.sparse_dense_matmul(results, kernel);
+                res = tf.keras.layers.Lambda(lambda x: tf.sparse.sparse_dense_matmul(x[0], x[1]))([results, self.kernel[i]]);
             else:
-                res = tf.linalg.matmul(results, kernel);
-            return res;
+                res = tf.keras.layers.Lambda(lambda x: tf.linalg.matmul(x[0], x[1]))([results, self.kernel[i]]);
+            # res.shape = (batch, N, Dout)
+            res = tf.keras.layers.Lambda(
+                lambda x, y: tf.transpose(tf.sparse.sparse_dense_matmul(y, tf.transpose(x, (1, 0, 2))), (1, 0, 2)),
+                arguments = {"y": self.supports[i]}
+            )(res);
+            outputs.append(res);
         # results.shape = (batch, N, Dout)
-        results = tf.keras.layers.Lambda(lambda x: tf.map_fn(dot1, x))(self.kernel);
-        def dot2(result):
-            # result.shape = (N, Dout)
-            # supports.shape = K * (N, N)
-            outputs = list();
-            for support in self.supports:
-                # output.shape = (N, Dout)
-                output = tf.keras.layers.Lambda(lambda x, y: tf.sparse.sparse_dense_matmul(y, x), arguments = {"y": support})(result);
-                outputs.append(output);
-            # res.shape = (N, Dout)
-            res = tf.keras.layers.Lambda(lambda x: tf.math.add_n(x))(outputs);
-            return res;
-        # results.shape = (batch, N, Dout)
-        results = tf.keras.layers.Lambda(lambda x: tf.map_fn(dot2, x))(results);
+        results = tf.keras.layers.Add()(outputs);
         if self.use_bias:
             results = tf.keras.layers.Lambda(lambda x: x[0] + x[1])([results, self.bias]);
         if self.activation is not None:
@@ -154,7 +147,10 @@ if __name__ == "__main__":
     adj = np.tril(adj,-1) + np.transpose(np.tril(adj,-1)) + np.eye(1500);
     adj = tf.constant(adj);
 
+    gc = GraphConvolution(filters = 200, supports = ChebyshevPolynomials(adj, 3), dropout_rate = 0.5, activation = tf.keras.layers.ReLU());
+    inputs = tf.constant(np.random.normal(size=(8,1500,200)));
+    results = gc(inputs);
     gcn = GCN(input_dim = 200, hidden_dim = 200, output_dim = 200, adj = adj);
-    results = gcn(tf.constant(np.random.normal(8,1500,200)));
+    results = gcn(inputs);
     gcn.save_weights('gcn.h5');
     gcn.load_weights('gcn.h5');
