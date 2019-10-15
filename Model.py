@@ -94,13 +94,13 @@ class GraphConvolution(tf.keras.layers.Layer):
         # self.supports = K * (N, N)
         self.kernel = [self.add_weight(name = 'kernel' + str(i), shape = (input_shape[-1], self.filters), initializer = tf.keras.initializers.GlorotUniform(), trainable = True) for i in range(len(self.supports))];
         if self.use_bias:
-            # self.bias.shape = ()
+            # self.bias.shape = (Dout)
             self.bias = self.add_weight(name = 'bias', shape = (self.filters,), initializer = tf.keras.initializers.Zeros(), trainable = True);
 
     def call(self, inputs):
 
         # dropout input
-        # results.shape = (batch, K, Din)
+        # results.shape = (batch, N, Din)
         if type(inputs) is tf.sparse.SparseTensor:
             results = tf.keras.layers.Lambda(lambda x, y: (1 - y) + tf.random.uniform(tf.shape(x)), arguments = {"y": self.dropout_rate})(inputs);
             results = tf.keras.layers.Lambda(lambda x: tf.cast(tf.math.floor(x), dtype = tf.bool))(results);
