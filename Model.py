@@ -17,10 +17,12 @@ def ChebyshevPolynomials(adj, max_degree = 3):
 
     # this function is executed eagerly.
     assert type(max_degree) is int;
+    assert adj.dtype == tf.float32;
     tf.debugging.Assert(tf.equal(tf.shape(tf.shape(adj))[0],2), [adj]);
     tf.debugging.Assert(tf.equal(tf.shape(adj)[0], tf.shape(adj)[1]), [adj]);
-    adj = tf.cast(adj, dtype = tf.float32);
-    adj_sparse = dense_to_sparse(adj);
+    if type(adj) is not tf.sparse.SparseTensor:
+        adj_sparse = dense_to_sparse(adj);
+    else: adj_sparse = adj;
     # 1) get graph laplacian matrix
     # d_mat_inv_sqrt = D^{-1/2}
     rowsum = tf.sparse.reduce_sum(adj_sparse, axis = 1, output_is_sparse = True);
@@ -131,18 +133,19 @@ class GraphConvolution(tf.keras.layers.Layer):
 def GCN(input_dim, hidden_dim, output_dim, adj, max_degree = 3, dropout_rate = 0.5):
 
     assert type(input_dim) is int and input_dim > 0;
-    # inputs.shape = (batch, N, D)
+    # inputs.shape = (batch, N, Din)
     chebys = ChebyshevPolynomials(adj, max_degree);
     inputs = tf.keras.Input((chebys[0].shape[0], input_dim,));
     results = GraphConvolution(filters = hidden_dim, supports = chebys, dropout_rate = dropout_rate, activation = tf.keras.layers.ReLU())(inputs);
     results = GraphConvolution(filters = output_dim, supports = chebys, dropout_rate = dropout_rate)(results);
+    # outputs.shape = (batch, N, Dout)
     return tf.keras.Model(inputs = inputs, outputs = results);
 
 if __name__ == "__main__":
 
     adj = np.random.randint(low = 0, high = 2, size = (1500,1500));
     adj = np.tril(adj,-1) + np.transpose(np.tril(adj,-1)) + np.eye(1500);
-    adj = tf.constant(adj);
+    adj = tf.constant(adj, dtype = tf.float32);
 
     gc = GraphConvolution(filters = 200, supports = ChebyshevPolynomials(adj, 3), dropout_rate = 0.5, activation = tf.keras.layers.ReLU());
     inputs = tf.constant(np.random.normal(size=(8,1500,200)));
