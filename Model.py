@@ -105,9 +105,9 @@ class GraphConvolution(tf.keras.layers.Layer):
         # dropout input
         # results.shape = (batch, N, Din)
         if type(inputs) is tf.sparse.SparseTensor:
-            results = tf.keras.layers.Lambda(lambda x, y: (1 - y) + tf.random.uniform(tf.shape(x)), arguments = {"y": self.dropout_rate})(inputs);
-            results = tf.keras.layers.Lambda(lambda x: tf.cast(tf.math.floor(x), dtype = tf.bool))(results);
-            results = tf.keras.layers.Lambda(lambda x: tf.sparse.retain(x[0], x[1]))([inputs, results]);
+            random = tf.keras.layers.Lambda(lambda x, y: (1 - y) + tf.random.uniform(tf.shape(x)), arguments = {"y": self.dropout_rate})(inputs);
+            mask_indices = tf.keras.layers.Lambda(lambda x: tf.where(tf.gather_nd(tf.math.greater_equal(x[0], 1),x[1].indices)))([random, inputs]);
+            results = tf.keras.layers.Lambda(lambda x: tf.sparse.SparseTensor(indices = tf.gather_nd(x[0].indices, x[1]), values = tf.gather_nd(x[0].values, x[1]), dense_shape = x[0].dense_shape))([inputs, mask_indices]);
             results = tf.keras.layers.Lambda(lambda x, y: x / (1 - y), arguments = {"y": self.dropout_rate})(results);
         else:
             results = tf.keras.layers.Dropout(self.dropout_rate)(inputs);
