@@ -22,7 +22,8 @@ def ChebyshevPolynomials(adj, max_degree = 3):
     tf.debugging.Assert(tf.equal(tf.shape(adj)[0], tf.shape(adj)[1]), [adj]);
     if type(adj) is not tf.sparse.SparseTensor:
         adj_sparse = dense_to_sparse(adj);
-    else: adj_sparse = adj;
+    else:
+        adj_sparse = adj;
     # 1) get graph laplacian matrix
     # d_mat_inv_sqrt = D^{-1/2}
     rowsum = tf.sparse.reduce_sum(adj_sparse, axis = 1, output_is_sparse = True);
@@ -44,7 +45,7 @@ def ChebyshevPolynomials(adj, max_degree = 3):
         tf.sparse.sparse_dense_matmul(
             d_mat_inv_sqrt,
             tf.transpose(
-                tf.sparse.sparse_dense_matmul(d_mat_inv_sqrt, adj, True, True))));
+                tf.sparse.sparse_dense_matmul(d_mat_inv_sqrt, tf.sparse.to_dense(adj_sparse), True, True))));
     # laplacian = I - D^{-1/2} * A * D^{-1/2}
     laplacian = tf.sparse.add(tf.sparse.eye(tf.shape(normalized_adj)[0]), normalized_adj.__mul__(-1));
     # 2) get scaled graph laplacian matrix
