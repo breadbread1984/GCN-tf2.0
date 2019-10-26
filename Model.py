@@ -117,6 +117,7 @@ class GraphConvolution(tf.keras.layers.Layer):
         for i in range(len(self.supports)):
             # res.shape = (batch, N, Dout)
             if type(results) is tf.sparse.SparseTensor:
+                # NOTE: this operation will be valid if tf supports tensor dot product between tensors over rank 2
                 res = tf.keras.layers.Lambda(lambda x: tf.sparse.sparse_dense_matmul(x[0], x[1]))([results, self.kernel[i]]);
             else:
                 res = tf.keras.layers.Lambda(lambda x: tf.linalg.matmul(x[0], x[1]))([results, self.kernel[i]]);
