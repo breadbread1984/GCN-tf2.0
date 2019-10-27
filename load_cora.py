@@ -10,21 +10,28 @@ from Model import dense_to_sparse;
 
 def normalize(m):
 
-  rowsum = tf.sparse.reduce_sum(m, axis = 1, output_is_sparse = True);
-  r_inv = tf.sparse.SparseTensor(
-    indices = rowsum.indices,
-    values = tf.math.pow(rowsum.values, -1),
-    dense_shape = rowsum.dense_shape);
-  mask = tf.math.logical_not(tf.math.is_inf(r_inv.values));
-  r_inv = tf.sparse.SparseTensor(
-    indices=tf.boolean_mask(r_inv.indices, mask),
-    values=tf.boolean_mask(r_inv.values, mask),
-    dense_shape=r_inv.dense_shape);
-  r_mat_inv = tf.sparse.SparseTensor(
-    indices=tf.concat([r_inv.indices, r_inv.indices], axis=-1),
-    values=r_inv.values,
-    dense_shape=tf.concat([r_inv.dense_shape, r_inv.dense_shape], axis=0));
-  return dense_to_sparse(tf.sparse.sparse_dense_matmul(r_mat_inv, tf.sparse.to_dense(m)));
+  if type(m) is tf.sparse.SparseTensor:
+    rowsum = tf.sparse.reduce_sum(m, axis = 1, output_is_sparse = True);
+    r_inv = tf.sparse.SparseTensor(
+        indices = rowsum.indices,
+        values = tf.math.pow(rowsum.values, -1),
+        dense_shape = rowsum.dense_shape);
+    mask = tf.math.logical_not(tf.math.is_inf(r_inv.values));
+    r_inv = tf.sparse.SparseTensor(
+        indices=tf.boolean_mask(r_inv.indices, mask),
+        values=tf.boolean_mask(r_inv.values, mask),
+        dense_shape=r_inv.dense_shape);
+    r_mat_inv = tf.sparse.SparseTensor(
+        indices=tf.concat([r_inv.indices, r_inv.indices], axis=-1),
+        values=r_inv.values,
+        dense_shape=tf.concat([r_inv.dense_shape, r_inv.dense_shape], axis=0));
+    return dense_to_sparse(tf.sparse.sparse_dense_matmul(r_mat_inv, tf.sparse.to_dense(m)));
+  else:
+    rowsum = tf.math.reduce_sum(m, axis = 1, keepdims = True);
+    r_inv = tf.math.pow(rowsum, -1);
+    mask = tf.math.logical_not(tf.math.is_inf(r_inv));
+    r_inv = tf.where(mask, r_inv, tf.zeros_like(r_inv));
+    return r_inv * m;
 
 def load_cora():
 
@@ -41,9 +48,15 @@ def load_cora():
   # convert to dataset
   idx_features_labels = np.genfromtxt("cora/cora.content", dtype = np.dtype(str));
   # 1)features.shape = (1, N, Din)
-  features = dense_to_sparse(idx_features_labels[:,1:-1].astype('float32'));
-  features = normalize(features);
-  features = tf.sparse.expand_dims(features, axis = 0);
+  if True:
+    # NOTE: remove this branch when tf.sparse.sparse_dense_matmul support high dimension tensor dot product
+    features = idx_features_labels[:, 1:-1].astype('float32');
+    features = normalize(features);
+    features = tf.expand_dims(features, axis = 0);
+  else:
+    features = dense_to_sparse(idx_features_labels[:,1:-1].astype('float32'));
+    features = normalize(features);
+    features = tf.sparse.expand_dims(features, axis = 0);
   # 2)labels.shape = (1, N, C)
   labels = idx_features_labels[:,-1];
   classes = set(labels);

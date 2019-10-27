@@ -27,8 +27,8 @@ def main():
             loss += tf.keras.losses.CategoricalCrossentropy(from_logits = True)(labels, outputs);
         avg_loss.update_state(loss);
         # apply gradients
-        grads = tape.gradient(loss, model.trainable_variables);
-        optimizer.apply_gradients(zip(grads, model.trainable_variables));
+        grads = tape.gradient(loss, gcn.trainable_variables);
+        optimizer.apply_gradients(zip(grads, gcn.trainable_variables));
         # write log
         if tf.equal(optimizer.iterations % 10, 0):
             with log.as_default():
