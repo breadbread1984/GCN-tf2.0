@@ -143,6 +143,32 @@ def GCN(input_dim, hidden_dim, output_dim, adj, max_degree = 3, dropout_rate = 0
     # outputs.shape = (batch, N, Dout)
     return tf.keras.Model(inputs = inputs, outputs = results);
 
+class Loss(tf.keras.Model):
+    
+    def __init__(self, gcn):
+        
+        super(Loss, self).__init__();
+        self.gcn = gcn;
+        
+    def call(self, inputs):
+        
+        assert type(inputs) in [tuple, list] and len(inputs) == 3;
+        # outputs.shape = (batch, N, Dout)
+        outputs = inputs[0];
+        # labels.shape = (batch, N, Dout)
+        labels = inputs[1];
+        # mask.shape = (batch, N)
+        mask = inputs[2];
+        loss = 0;
+        for variable in self.gcn.trainable_variables:
+            loss += 5e-4 * tf.nn.l2_loss(variable);
+        # outputs.shape = (K, Dout)
+        outputs = tf.boolean_mask(outputs, mask);
+        # labels.shape = (K, Dout)
+        labels = tf.boolean_mask(labels, mask);
+        loss += tf.keras.losses.CategoricalCrossentropy(from_logits = True)(labels, outputs);
+        return loss;
+
 if __name__ == "__main__":
 
     adj = np.random.randint(low = 0, high = 2, size = (1500,1500));

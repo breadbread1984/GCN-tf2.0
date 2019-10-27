@@ -3,7 +3,7 @@
 from os.path import join;
 import tensorflow as tf;
 from load_cora import load_cora;
-from Model import GCN;
+from Model import GCN, Loss;
 
 def main():
 
@@ -11,6 +11,9 @@ def main():
     features, labels, adj = load_cora();
     # create graph convolutional network
     gcn = GCN(input_dim = features.shape[-1], hidden_dim = 16, output_dim = labels.shape[-1], adj = adj);
+    gcnloss = Loss(gcn);
+    # the training set gives all labels, so it is a supervised learning.
+    mask = tf.ones((1, features.shape[-2]));
     # train context
     optimizer = tf.keras.optimizers.Adam(1e-2);
     checkpoint = tf.train.Checkpoint(model = gcn, optimizer = optimizer, optimizer_step = optimizer.iterations);
@@ -21,10 +24,7 @@ def main():
     while True:
         with tf.GradientTape() as tape:
             outputs = gcn(features);
-            loss = 0;
-            for variable in gcn.trainable_variables:
-                loss += 5e-4 * tf.nn.l2_loss(variable);
-            loss += tf.keras.losses.CategoricalCrossentropy(from_logits = True)(labels, outputs);
+            loss = gcnloss([outputs, labels, mask]);
         avg_loss.update_state(loss);
         # apply gradients
         grads = tape.gradient(loss, gcn.trainable_variables);
